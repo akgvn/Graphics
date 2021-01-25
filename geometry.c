@@ -14,12 +14,12 @@
 
 float vec3f_norm(Vec3f vec) { return sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z); }
 
-void vec3f_normalize(Vec3f* vec) {
+void vec3f_normalize(const Vec3f* vec) {
     float norm = vec3f_norm(*vec);
     vec->x /= norm; vec->y /= norm; vec->z /= norm;
 }
 
-Vec3f cross(Vec3f* v1, Vec3f* v2) {
+Vec3f cross(const Vec3f* const v1, const Vec3f* const v2) {
     Vec3f ret = {
         .x = v1->y*v2->z - v1->z*v2->y,
         .y = v1->z*v2->x - v1->x*v2->z,
@@ -28,9 +28,9 @@ Vec3f cross(Vec3f* v1, Vec3f* v2) {
     return ret;
 }
 
-float multiply_vec3f(Vec3f* lhs, Vec3f* rhs) { return (lhs->x * rhs->x + lhs->y * rhs->y + lhs->z * rhs->z); }
+float multiply_vec3f(const Vec3f* const lhs, const Vec3f* const rhs) { return (lhs->x * rhs->x + lhs->y * rhs->y + lhs->z * rhs->z); }
 
-Vec3f multiply_vec3f_with_scalar(Vec3f* lhs, float rhs) {
+Vec3f multiply_vec3f_with_scalar(const Vec3f* const lhs, float rhs) {
     Vec3f ret = {
         .x = lhs->x * rhs,
         .y = lhs->y * rhs,
@@ -39,7 +39,7 @@ Vec3f multiply_vec3f_with_scalar(Vec3f* lhs, float rhs) {
     return ret;
 }
 
-Vec3f add_vec3f(Vec3f* lhs, Vec3f* rhs) {
+Vec3f add_vec3f(const Vec3f* const lhs, const Vec3f* const rhs) {
     Vec3f ret = {
         .x = lhs->x + rhs->x,
         .y = lhs->y + rhs->y,
@@ -48,7 +48,7 @@ Vec3f add_vec3f(Vec3f* lhs, Vec3f* rhs) {
     return ret;
 }
 
-Vec3f sub_vec3f(Vec3f* lhs, Vec3f* rhs) {
+Vec3f sub_vec3f(const Vec3f* const lhs, const Vec3f* const rhs) {
     Vec3f ret = {
         .x = lhs->x - rhs->x,
         .y = lhs->y - rhs->y,
@@ -59,14 +59,14 @@ Vec3f sub_vec3f(Vec3f* lhs, Vec3f* rhs) {
 
 // Vec4f -------------------------------------
 
-float multiply_vec4f(Vec4f* lhs, Vec4f* rhs) {
+float multiply_vec4f(const Vec4f* const lhs, const Vec4f* const rhs) {
     return (lhs->x * rhs->x + 
             lhs->y * rhs->y + 
             lhs->z * rhs->z +
             lhs->w * rhs->w);
 }
 
-Vec4f multiply_vec4f_with_scalar(Vec4f* lhs, float rhs) {
+Vec4f multiply_vec4f_with_scalar(const Vec4f* const lhs, float rhs) {
     Vec4f ret = {
         .x = lhs->x * rhs,
         .y = lhs->y * rhs,
@@ -76,7 +76,7 @@ Vec4f multiply_vec4f_with_scalar(Vec4f* lhs, float rhs) {
     return ret;
 }
 
-Vec4f add_vec4f(Vec4f* lhs, Vec4f* rhs) {
+Vec4f add_vec4f(const Vec4f* const lhs, const Vec4f* const rhs) {
     Vec4f ret = {
         .x = lhs->x + rhs->x,
         .y = lhs->y + rhs->y,
@@ -86,7 +86,7 @@ Vec4f add_vec4f(Vec4f* lhs, Vec4f* rhs) {
     return ret;
 }
 
-Vec4f sub_vec4f(Vec4f* lhs, Vec4f* rhs) {
+Vec4f sub_vec4f(const Vec4f* const lhs, const Vec4f* const rhs) {
     Vec4f ret = {
         .x = lhs->x - rhs->x,
         .y = lhs->y - rhs->y,

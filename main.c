@@ -22,8 +22,8 @@ typedef struct
 } Ray;
 
 
-bool sphere_ray_intersect(const Sphere* const sphere, const Ray* const ray, float t0) {
-    Vec3f L = sphere->center - origin; // TODO Use the geometry.h function!
+bool sphere_ray_intersects(const Sphere* const sphere, const Ray* const ray, float t0) {
+    Vec3f sphere_center_to_ray_origin_distance = sub_vec3f(sphere->center, ray->origin);
 }
 
 void render() {
