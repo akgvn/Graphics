@@ -15,8 +15,14 @@
 
 typedef struct
 {
+    Vec3f diffuse_color;
+} Material;
+
+typedef struct
+{
     Vec3f center;
     float radius;
+    Material material;
 } Sphere;
 
 typedef struct
@@ -27,8 +33,8 @@ typedef struct
 
 
 // Returns true if the ray intersects the sphere. 
-// Also mutates the t0 parameter to reflect the location of the first intersection.
-bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *t0) {
+// Also mutates the first_intersect_distance parameter to reflect the location of the first intersection.
+bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *first_intersect_distance) {
     // The fact that this function is not self-explanatory saddens me. Especially since I'm
     // trying to name things in a explanatory way. I'll put a list of resources to
     // understand what is going on here to the readme.
@@ -45,43 +51,72 @@ bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, flo
 
     float half_length_of_ray_inside_circle = sqrtf(radius_squared - center_to_ray_straight_distance);
 
-    *t0 = tc - half_length_of_ray_inside_circle;
-    float t1 = tc + half_length_of_ray_inside_circle;
+    *first_intersect_distance     = tc - half_length_of_ray_inside_circle;
+    float last_intersect_distance = tc + half_length_of_ray_inside_circle;
 
-    if (t0 < 0) *t0 = t1; // Maybe intersects at only one point?
-    if (t0 < 0) return false;
+    if (first_intersect_distance < 0) *first_intersect_distance = last_intersect_distance; // Maybe intersects at only one point?
+    if (first_intersect_distance < 0) return false;
 
     return true;
 }
 
-// Return color of the sphere if intersected, otherwise returns background color.
-Vec3f cast_ray(const Ray* const ray, const Sphere* const sphere) {
-    float max_possible_distance = FLT_MAX;
-    Vec3f ret = {0.2, 0.7, 0.8}; // Background color
-    if (ray_intersects_sphere(ray, sphere, &max_possible_distance)) {
-        // Change to sphere color since there is an intersection.
-        ret = (Vec3f) {0.4, 0.4, 0.3};
+bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* N, Material* material) {
+    float spheres_distance = FLT_MAX;
+
+    for (size_t i = 0; i < number_of_spheres; i++) {
+        float distance_of_i;
+        bool current_sphere_intersects = ray_intersects_sphere(ray, &spheres[i], &distance_of_i);
+
+        // Finds the closest sphere.
+        if (current_sphere_intersects && (distance_of_i < spheres_distance)) {
+            spheres_distance = distance_of_i;
+
+            *hit_point = add_vec3f(ray->origin, multiply_vec3f_with_scalar(ray->direction, distance_of_i));
+            
+            *N = sub_vec3f(*hit_point, spheres[i].center);
+            vec3f_normalize(N); // NOTE: As far as I can tell, N is the surface normal at the point where the cast ray hit.
+
+            *material = spheres[i].material;
+        }
     }
-    return ret;
+
+    return (spheres_distance < 1000);
 }
 
-void render(const Sphere* const sphere) {
+// Return color of the sphere if intersected, otherwise returns background color.
+Vec3f cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres) {
+    Vec3f point, N;
+    Material material;
+    // I feel like the locals I just declared will be part of a sphere in future. We'll see. 
+
+    if (scene_intersect(ray, spheres, number_of_spheres, &point, &N, &material)) {
+        return material.diffuse_color;
+    }
+
+    return (Vec3f) {0.2, 0.7, 0.8}; // Background color
+}
+
+void render(const Sphere* const spheres, size_t number_of_spheres) {
     Vec3f *framebuffer = malloc(WIDTH*HEIGHT*sizeof(Vec3f));
 
     // Each pixel in the resulting image will have an RGB value, represented by the Vec3f type.
     for (size_t row = 0; row < HEIGHT; row++) {
         for (size_t col = 0; col < WIDTH; col++) {
             // Sweeping the field of view with rays.
-            float screen_width = 2 * tan(FOV/2.);
+
+            const float camera_screen_distance = 1.0;
+            float screen_width = 2 * tan(FOV/2.) * camera_screen_distance;
             float x =  (screen_width * (col + 0.5)/(float)WIDTH  - 1)* WIDTH/(float)HEIGHT;
             float y = -(screen_width * (row + 0.5)/(float)HEIGHT - 1);
+
             Vec3f dir = {x, y, -1};
+            
             vec3f_normalize(&dir);
             Ray ray = {{0, 0, 0}, dir};
 
             // Writing [col * row + WIDTH] instead of the current expression just cost 
             // me 1.5 hours of debugging. Sigh. Don't write code when you're sleepy!
-            framebuffer[col + row * WIDTH] = cast_ray(&ray, sphere);
+            framebuffer[col + row * WIDTH] = cast_ray(&ray, spheres, number_of_spheres);
         }
     }
 
@@ -107,9 +142,21 @@ void render(const Sphere* const sphere) {
 
 int main(int argc, char const *argv[])
 {
-    Vec3f sphere_center = {-3, 0, -16};
+    Material      ivory = {{0.4, 0.4, 0.3}};
+    Material red_rubber = {{0.3, 0.1, 0.1}};
 
-    Sphere sphere = {sphere_center, 2};
-    render(&sphere);
+    Sphere spheres[] = {
+        (Sphere) { (Vec3f) {-3,    0,   -16}, 2,      ivory},
+        (Sphere) { (Vec3f) {-1.0, -1.5, -12}, 2, red_rubber},
+        (Sphere) { (Vec3f) { 1.5, -0.5, -18}, 3, red_rubber},
+        (Sphere) { (Vec3f) { 7,    5,   -18}, 4,      ivory},
+    };
+
+    render(spheres, 4);
     return 0;
 }
+
+
+
+
+    

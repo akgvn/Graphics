@@ -4,8 +4,6 @@
 
 // The lines of code could have been fewer if I used macros but I'm avoiding macros for now, I'd rather not deal with them for the time being.
 
-// TODO: Add const to parameters!
-
 #include "geometry.h"
 #include <math.h>
 #include <stdio.h>
