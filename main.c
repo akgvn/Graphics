@@ -10,26 +10,29 @@
 #define HEIGHT 768
 #define FOV (M_PI/2.0)
 
-// #define MIN(a,b) (((a)<(b))?(a):(b))
-// #define MAX(a,b) (((a)>(b))?(a):(b))
-
-typedef struct
+typedef struct Material
 {
     Vec3f diffuse_color;
 } Material;
 
-typedef struct
+typedef struct Sphere
 {
     Vec3f center;
     float radius;
     Material material;
 } Sphere;
 
-typedef struct
+typedef struct Ray
 {
     Vec3f origin;
     Vec3f direction;
 } Ray;
+
+typedef struct Light
+{
+    Vec3f position;
+    float intensity;
+} Light;
 
 
 // Returns true if the ray intersects the sphere. 
@@ -60,7 +63,7 @@ bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, flo
     return true;
 }
 
-bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* N, Material* material) {
+bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* surface_normal, Material* material) {
     float spheres_distance = FLT_MAX;
 
     for (size_t i = 0; i < number_of_spheres; i++) {
@@ -73,8 +76,8 @@ bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_sph
 
             *hit_point = add_vec3f(ray->origin, multiply_vec3f_with_scalar(ray->direction, distance_of_i));
             
-            *N = sub_vec3f(*hit_point, spheres[i].center);
-            vec3f_normalize(N); // NOTE: As far as I can tell, N is the surface normal at the point where the cast ray hit.
+            *surface_normal = sub_vec3f(*hit_point, spheres[i].center);
+            vec3f_normalize(surface_normal);
 
             *material = spheres[i].material;
         }
@@ -84,19 +87,29 @@ bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_sph
 }
 
 // Return color of the sphere if intersected, otherwise returns background color.
-Vec3f cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres) {
-    Vec3f point, N;
+Vec3f cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
+    Vec3f point, surface_normal_at_point;
     Material material;
     // I feel like the locals I just declared will be part of a sphere in future. We'll see. 
 
-    if (scene_intersect(ray, spheres, number_of_spheres, &point, &N, &material)) {
-        return material.diffuse_color;
+    if (scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal_at_point, &material)) {
+        float diffuse_light_intensity = 0;
+        for (size_t i = 0; i < number_of_lights; i++) {
+            Vec3f light_direction = sub_vec3f(lights[i].position, point);
+            vec3f_normalize(&light_direction);
+
+            float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal_at_point);
+            if (surface_illumination_intensity < 0) surface_illumination_intensity = 0;
+
+            diffuse_light_intensity += lights[i].intensity * surface_illumination_intensity;
+        }
+        return multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity);
     }
 
     return (Vec3f) {0.2, 0.7, 0.8}; // Background color
 }
 
-void render(const Sphere* const spheres, size_t number_of_spheres) {
+void render(const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
     Vec3f *framebuffer = malloc(WIDTH*HEIGHT*sizeof(Vec3f));
 
     // Each pixel in the resulting image will have an RGB value, represented by the Vec3f type.
@@ -116,7 +129,7 @@ void render(const Sphere* const spheres, size_t number_of_spheres) {
 
             // Writing [col * row + WIDTH] instead of the current expression just cost 
             // me 1.5 hours of debugging. Sigh. Don't write code when you're sleepy!
-            framebuffer[col + row * WIDTH] = cast_ray(&ray, spheres, number_of_spheres);
+            framebuffer[col + row * WIDTH] = cast_ray(&ray, spheres, number_of_spheres, lights, number_of_lights);
         }
     }
 
@@ -128,9 +141,9 @@ void render(const Sphere* const spheres, size_t number_of_spheres) {
     
     for (size_t pixel = 0; pixel < WIDTH * HEIGHT; pixel++) {
         char rgb[3] = {
-            (char)(framebuffer[pixel].x * 255),
-            (char)(framebuffer[pixel].y * 255),
-            (char)(framebuffer[pixel].z * 255),
+            (char)(framebuffer[pixel].x * 255), // NOTE: Could overflow!
+            (char)(framebuffer[pixel].y * 255), // NOTE: Could overflow!
+            (char)(framebuffer[pixel].z * 255), // NOTE: Could overflow!
         };
         // Note to self: fwrite moves the file cursor,
         // no need to use fseek or something.
@@ -142,17 +155,21 @@ void render(const Sphere* const spheres, size_t number_of_spheres) {
 
 int main(int argc, char const *argv[])
 {
-    Material      ivory = {{0.4, 0.4, 0.3}};
+    Material ivory      = {{0.4, 0.4, 0.3}};
     Material red_rubber = {{0.3, 0.1, 0.1}};
 
     Sphere spheres[] = {
-        (Sphere) { (Vec3f) {-3,    0,   -16}, 2,      ivory},
-        (Sphere) { (Vec3f) {-1.0, -1.5, -12}, 2, red_rubber},
-        (Sphere) { (Vec3f) { 1.5, -0.5, -18}, 3, red_rubber},
-        (Sphere) { (Vec3f) { 7,    5,   -18}, 4,      ivory},
+        {{-3,    0,   -16}, 2,      ivory},
+        {{-1.0, -1.5, -12}, 2, red_rubber},
+        {{ 1.5, -0.5, -18}, 3, red_rubber},
+        {{ 7,    5,   -18}, 4,      ivory},
     };
 
-    render(spheres, 4);
+    Light lights[] = {
+        {{-20, 20,  20}, 1.5},
+    };
+
+    render(spheres, 4, lights, 1);
     return 0;
 }
 
