@@ -1,20 +1,21 @@
 #include "geometry.h"
 #include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <float.h> // for maximum float value, FLT_MAX
-#include <math.h> // for M_PI
-#include <stdbool.h>
+#include <stdio.h>   // printf
+#include <stdlib.h>  // malloc, free
+#include <float.h>   // maximum float value (FLT_MAX)
+#include <math.h>    // M_PI, pow
+#include <stdbool.h> // bool, true, false
 
 #define WIDTH 1024
 #define HEIGHT 768
 #define FOV (M_PI/2.0)
 
-
 // NOTE: Maybe move these structs to a Raytracing.h?
 typedef struct Material
 {
+    Vec2f albedo;
     Vec3f diffuse_color;
+    float specular_exponent; // "shininess"?
 } Material;
 
 typedef struct Sphere
@@ -42,7 +43,7 @@ typedef struct Light
 static bool
 ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *first_intersect_distance) {
     // The fact that this function is not self-explanatory saddens me. Especially since I'm
-    // trying to name things in a explanatory way. I'll put a list of resources to
+    // trying to name things in an explanatory way. I'll put a list of resources to
     // understand what is going on here to the readme.
 
     Vec3f L = sub_vec3f(sphere->center, ray->origin); // sphere_center_to_ray_origin_distance
@@ -65,6 +66,15 @@ ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *f
 
     return true;
 }
+
+Vec3f
+reflection_vector(Vec3f light_direction, Vec3f surface_normal) {
+    return sub_vec3f(
+        light_direction,
+        multiply_vec3f_with_scalar(surface_normal, 2.0 * multiply_vec3f(light_direction, surface_normal))
+    );
+}
+
 
 static bool
 scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* surface_normal, Material* material) {
@@ -92,13 +102,15 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
 
 // Return color of the sphere if intersected, otherwise returns background color.
 static Vec3f
-cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
+cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, 
+         const Light* const lights, size_t number_of_lights) {
     Vec3f point, surface_normal_at_point;
     Material material;
     // I feel like the locals I just declared will be part of a sphere in future. We'll see. 
 
     if (scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal_at_point, &material)) {
-        float diffuse_light_intensity = 0;
+        float diffuse_light_intensity = 0, specular_light_intensity = 0;
+
         for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
@@ -106,12 +118,59 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
             float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal_at_point);
             if (surface_illumination_intensity < 0) surface_illumination_intensity = 0;
 
-            diffuse_light_intensity += lights[i].intensity * surface_illumination_intensity;
+            // specular_illumination_intensity might not be the best name for this variable.
+            float specular_illumination_intensity = multiply_vec3f(reflection_vector(light_direction, surface_normal_at_point), ray->direction);
+            if (specular_illumination_intensity < 0) specular_illumination_intensity = 0;
+            specular_illumination_intensity = pow(specular_illumination_intensity, material.specular_exponent);
+
+            diffuse_light_intensity  += lights[i].intensity * surface_illumination_intensity;
+            specular_light_intensity += lights[i].intensity * specular_illumination_intensity;
         }
-        return multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity);
+        return add_vec3f(
+            multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
+            multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
+        );
     }
 
     return (Vec3f) {0.2, 0.7, 0.8}; // Background color
+}
+
+static void
+color_overflow_mitigation(Vec3f* vec) {
+    float max = vec->x > vec->y ? vec->x : vec->y;
+    max = max > vec->z ? max : vec->z;
+
+    if (max > 1) {
+        vec->x /= max;
+        vec->y /= max;
+        vec->z /= max;
+    }
+}
+
+// NOTE: Move this to a utils.h (?) when working on Raycasting or Software Rendering.
+void
+dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
+    // Size of buffer parametre must be width * height!
+    // Dump the image to a PPM file.
+    FILE *fp = fopen("out.ppm", "wb");
+    char header[64];
+    int count = sprintf(header, "P6\n%d %d\n255\n", width, height);
+    fwrite(header, sizeof(char), count, fp); // Write the PPM header.
+    
+    for (size_t pixel = 0; pixel < width * height; pixel++) {
+        color_overflow_mitigation(&buffer[pixel]);
+
+        char rgb[3] = {
+            (char)(buffer[pixel].x * 255), // NOTE: Could overflow without the mitigation function above!
+            (char)(buffer[pixel].y * 255), // NOTE: Could overflow without the mitigation function above!
+            (char)(buffer[pixel].z * 255), // NOTE: Could overflow without the mitigation function above!
+        };
+        // Note to self: fwrite moves the file cursor,
+        // no need to use fseek or something.
+        fwrite(rgb, sizeof(char), 3, fp);
+    }
+
+    fclose(fp);
 }
 
 static void
@@ -135,34 +194,18 @@ render(const Sphere* const spheres, size_t number_of_spheres, const Light* const
 
             // Writing [col * row + WIDTH] instead of the current expression just cost 
             // me 1.5 hours of debugging. Sigh. Don't write code when you're sleepy!
-            framebuffer[col + row * WIDTH] = cast_ray(&ray, spheres, number_of_spheres, lights, number_of_lights);
+            size_t cell_index = col + row * WIDTH;
+            framebuffer[cell_index] = cast_ray(&ray, spheres, number_of_spheres, lights, number_of_lights);
         }
     }
-
-    // Dump the image to a PPM file.
-    FILE *fp = fopen("out.ppm", "wb");
-    char header[64];
-    int count = sprintf(header, "P6\n%d %d\n255\n", WIDTH, HEIGHT);
-    fwrite(header, sizeof(char), count, fp); // Write the PPM header.
-    
-    for (size_t pixel = 0; pixel < WIDTH * HEIGHT; pixel++) {
-        char rgb[3] = {
-            (char)(framebuffer[pixel].x * 255), // NOTE: Could overflow!
-            (char)(framebuffer[pixel].y * 255), // NOTE: Could overflow!
-            (char)(framebuffer[pixel].z * 255), // NOTE: Could overflow!
-        };
-        // Note to self: fwrite moves the file cursor,
-        // no need to use fseek or something.
-        fwrite(rgb, sizeof(char), 3, fp);
-    }
-
-    fclose(fp); free(framebuffer);
+    dump_ppm_image(framebuffer, WIDTH, HEIGHT);
+    free(framebuffer);
 }
 
-void raytracing_main()
-{
-    Material ivory      = {{0.4, 0.4, 0.3}};
-    Material red_rubber = {{0.3, 0.1, 0.1}};
+void
+raytracing_main() {
+    Material      ivory = {{0.6,  0.3}, {0.4, 0.4, 0.3},   50.0};
+    Material red_rubber = {{0.9,  0.1}, {0.3, 0.1, 0.1},   10.0};
 
     Sphere spheres[] = {
         {{-3,    0,   -16}, 2,      ivory},
@@ -173,7 +216,9 @@ void raytracing_main()
 
     Light lights[] = {
         {{-20, 20,  20}, 1.5},
+        {{ 30, 50, -25}, 1.8},
+        {{ 30, 20,  30}, 1.7},
     };
 
-    render(spheres, 4, lights, 1);
+    render(spheres, 4, lights, 3);
 }

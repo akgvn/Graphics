@@ -1,4 +1,4 @@
-extern void raytracing_main();
+extern void raytracing_main(); // in the file raytracing.c
 
 int main(int argc, char const *argv[])
 {
