@@ -10,6 +10,8 @@
 #define HEIGHT 768
 #define FOV (M_PI/2.0)
 
+
+// NOTE: Maybe move these structs to a Raytracing.h?
 typedef struct Material
 {
     Vec3f diffuse_color;
@@ -37,7 +39,8 @@ typedef struct Light
 
 // Returns true if the ray intersects the sphere. 
 // Also mutates the first_intersect_distance parameter to reflect the location of the first intersection.
-bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *first_intersect_distance) {
+static bool
+ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *first_intersect_distance) {
     // The fact that this function is not self-explanatory saddens me. Especially since I'm
     // trying to name things in a explanatory way. I'll put a list of resources to
     // understand what is going on here to the readme.
@@ -63,7 +66,8 @@ bool ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, flo
     return true;
 }
 
-bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* surface_normal, Material* material) {
+static bool
+scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* surface_normal, Material* material) {
     float spheres_distance = FLT_MAX;
 
     for (size_t i = 0; i < number_of_spheres; i++) {
@@ -87,7 +91,8 @@ bool scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_sph
 }
 
 // Return color of the sphere if intersected, otherwise returns background color.
-Vec3f cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
+static Vec3f
+cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
     Vec3f point, surface_normal_at_point;
     Material material;
     // I feel like the locals I just declared will be part of a sphere in future. We'll see. 
@@ -109,7 +114,8 @@ Vec3f cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_
     return (Vec3f) {0.2, 0.7, 0.8}; // Background color
 }
 
-void render(const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
+static void
+render(const Sphere* const spheres, size_t number_of_spheres, const Light* const lights, size_t number_of_lights) {
     Vec3f *framebuffer = malloc(WIDTH*HEIGHT*sizeof(Vec3f));
 
     // Each pixel in the resulting image will have an RGB value, represented by the Vec3f type.
