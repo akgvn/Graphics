@@ -115,6 +115,33 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
 
+            // Shadows --------
+
+            float light_distance = vec3f_norm(sub_vec3f(lights[i].position, point));
+
+            Vec3f shadow_origin;
+            Vec3f normal_divided = multiply_vec3f_with_scalar(surface_normal, 0.001);
+            // Check if the point is in the shadow of lights[i].
+            if (multiply_vec3f(light_direction, surface_normal) < 0) {
+                shadow_origin = sub_vec3f(point, normal_divided);
+            } else {
+                shadow_origin = add_vec3f(point, normal_divided);
+            }
+            const Ray shadow_ray = {shadow_origin, light_direction};
+
+            Vec3f shadow_point, shadow_normal; 
+            Material temp_material;
+
+            bool scene_thing = scene_intersect(&shadow_ray, spheres, number_of_spheres, &shadow_point, &shadow_normal, &temp_material);
+            bool shadow_thing = (vec3f_norm(sub_vec3f(shadow_point, shadow_origin)) < light_distance);
+            bool in_shadow = scene_thing && shadow_thing;
+
+            if (in_shadow) { 
+                continue;
+            }
+
+            // Shadows end ----
+
             // Lighting stuff starts here:
             float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal);
             if (surface_illumination_intensity < 0) surface_illumination_intensity = 0;
