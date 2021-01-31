@@ -10,7 +10,7 @@
 
 // Vec3f -------------------------------------
 
-float vec3f_norm(Vec3f vec) { return sqrt(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z); }
+float vec3f_norm(Vec3f vec) { return sqrtf(vec.x*vec.x + vec.y*vec.y + vec.z*vec.z); }
 
 void vec3f_normalize(Vec3f* const vec) {
     float norm = vec3f_norm(*vec);

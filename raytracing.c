@@ -104,28 +104,30 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
 static Vec3f
 cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, 
          const Light* const lights, size_t number_of_lights) {
-    Vec3f point, surface_normal_at_point;
+    Vec3f point, surface_normal;
     Material material;
-    // I feel like the locals I just declared will be part of a sphere in future. We'll see. 
 
-    if (scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal_at_point, &material)) {
+    if (scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
         float diffuse_light_intensity = 0, specular_light_intensity = 0;
 
+        size_t count = 0;
         for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
 
-            float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal_at_point);
+            // Lighting stuff starts here:
+            float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal);
             if (surface_illumination_intensity < 0) surface_illumination_intensity = 0;
 
             // specular_illumination_intensity might not be the best name for this variable.
-            float specular_illumination_intensity = multiply_vec3f(reflection_vector(light_direction, surface_normal_at_point), ray->direction);
+            float specular_illumination_intensity = multiply_vec3f(reflection_vector(light_direction, surface_normal), ray->direction);
             if (specular_illumination_intensity < 0) specular_illumination_intensity = 0;
             specular_illumination_intensity = pow(specular_illumination_intensity, material.specular_exponent);
 
             diffuse_light_intensity  += lights[i].intensity * surface_illumination_intensity;
             specular_light_intensity += lights[i].intensity * specular_illumination_intensity;
         }
+
         return add_vec3f(
             multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
             multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
@@ -133,18 +135,6 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
     }
 
     return (Vec3f) {0.2, 0.7, 0.8}; // Background color
-}
-
-static void
-color_overflow_mitigation(Vec3f* vec) {
-    float max = vec->x > vec->y ? vec->x : vec->y;
-    max = max > vec->z ? max : vec->z;
-
-    if (max > 1) {
-        vec->x /= max;
-        vec->y /= max;
-        vec->z /= max;
-    }
 }
 
 // NOTE: Move this to a utils.h (?) when working on Raycasting or Software Rendering.
@@ -158,12 +148,24 @@ dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
     fwrite(header, sizeof(char), count, fp); // Write the PPM header.
     
     for (size_t pixel = 0; pixel < width * height; pixel++) {
-        color_overflow_mitigation(&buffer[pixel]);
+        
+        {
+            // Check if any of the vec elements is greater than one.
+            Vec3f* vec = &buffer[pixel];
+            float max = vec->x > vec->y ? vec->x : vec->y;
+            max = max > vec->z ? max : vec->z;
+
+            if (max > 1) {
+                vec->x /= max;
+                vec->y /= max;
+                vec->z /= max;
+            }
+        }
 
         char rgb[3] = {
-            (char)(buffer[pixel].x * 255), // NOTE: Could overflow without the mitigation function above!
-            (char)(buffer[pixel].y * 255), // NOTE: Could overflow without the mitigation function above!
-            (char)(buffer[pixel].z * 255), // NOTE: Could overflow without the mitigation function above!
+            (char)(buffer[pixel].x * 255), // NOTE: Could overflow without the check above!
+            (char)(buffer[pixel].y * 255), // NOTE: Could overflow without the check above!
+            (char)(buffer[pixel].z * 255), // NOTE: Could overflow without the check above!
         };
         // Note to self: fwrite moves the file cursor,
         // no need to use fseek or something.
