@@ -61,10 +61,14 @@ ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *f
     *first_intersect_distance     = tc - half_length_of_ray_inside_circle;
     float last_intersect_distance = tc + half_length_of_ray_inside_circle;
 
-    if (first_intersect_distance < 0) *first_intersect_distance = last_intersect_distance; // Maybe intersects at only one point?
-    if (first_intersect_distance < 0) return false;
-
-    return true;
+    // IMPORTANT NOTE / TODO: IT LOOKS LIKE THE COMPILER OPTIMIZES OUT SOME THE FOLLOWING THREE LINES.
+    // I realized this while working on adding shadows. It seems that compiler was ignoring the second
+    // if (first_intersect_distance < 0) statement, so I changed it to if (last_intersect_distance < 0).
+    // Quick look on godbolt makes it seems like the next line is optimized out in this state, but I didn't
+    // encounter any corrupted renderings so far. I'm leaving this for now, but this may need further investigation.
+    if (first_intersect_distance < 0) { *first_intersect_distance = last_intersect_distance; } // Maybe intersects at only one point?
+    if (last_intersect_distance < 0) { return false; }
+    else { return true; }
 }
 
 Vec3f
@@ -83,6 +87,13 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
     for (size_t i = 0; i < number_of_spheres; i++) {
         float distance_of_i;
         bool current_sphere_intersects = ray_intersects_sphere(ray, &spheres[i], &distance_of_i);
+        
+        // See the "IMPORTANT NOTE / TODO" above. The next 3 lines are the test that revealed the issue. Might need them again.
+        // if (distance_of_i < 0) {
+        //     printf("negative but bool is %d\n", current_sphere_intersects);
+        //     continue;
+        // }
+
 
         // Finds the closest sphere.
         if (current_sphere_intersects && (distance_of_i < spheres_distance)) {
@@ -116,6 +127,29 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
     for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
+
+            bool in_shadow = false;
+            {
+                // Can this point see the current light?
+                Vec3f light_to_point_vec = sub_vec3f(lights[i].position, point);
+                float light_distance = vec3f_norm(light_to_point_vec);
+
+                Vec3f shadow_origin;
+                if (multiply_vec3f(light_direction, surface_normal) < 0) {
+                    shadow_origin = sub_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+                } else {
+                    shadow_origin = add_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+                }
+
+                Vec3f shadow_pt = {0, 0, 0}, shadow_N= {0, 0, 0}; Material tmpmaterial = {{0, 0}, {0, 0, 0}, 0.0};
+
+                Ray temp_ray = {shadow_origin, light_direction};
+                bool light_intersected = scene_intersect(&temp_ray, spheres, number_of_spheres, &shadow_pt, &shadow_N, &tmpmaterial);
+                Vec3f pt_to_origin = sub_vec3f(shadow_pt, shadow_origin);
+                bool obstruction_closer_than_light = vec3f_norm(pt_to_origin) < light_distance;
+                in_shadow = light_intersected && obstruction_closer_than_light;
+            }
+            if (in_shadow) continue;
 
             // Diffuse Lighting:
             float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal);
