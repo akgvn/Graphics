@@ -13,7 +13,7 @@
 // NOTE: Maybe move these structs to a Raytracing.h?
 typedef struct Material
 {
-    Vec2f albedo;
+    Vec3f albedo;
     Vec3f diffuse_color;
     float specular_exponent; // "shininess"?
 } Material;
@@ -94,7 +94,6 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
         //     continue;
         // }
 
-
         // Finds the closest sphere.
         if (current_sphere_intersects && (distance_of_i < spheres_distance)) {
             spheres_distance = distance_of_i;
@@ -114,16 +113,32 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
 // Return color of the sphere if intersected, otherwise returns background color.
 static Vec3f
 cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, 
-         const Light* const lights, size_t number_of_lights) {
+         const Light* const lights, size_t number_of_lights, size_t depth) {
     Vec3f point, surface_normal;
     Material material;
 
-    if (!scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
+    if (depth > 5 || !scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
         return (Vec3f) {0.2, 0.7, 0.8}; // Background color
     }
-        
-    float diffuse_light_intensity = 0, specular_light_intensity = 0;
 
+    Vec3f reflect_color;
+    {   // Reflection stuff happens in this scope.
+        Vec3f reflect_direction = reflection_vector(ray->direction, surface_normal); vec3f_normalize(&reflect_direction);
+    
+        Vec3f reflect_origin; // offset the original point to avoid occlusion by the object itself
+        {
+            if (multiply_vec3f(reflect_direction, surface_normal) < 0) {
+                reflect_origin = sub_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+            } else {
+                reflect_origin = add_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+            }
+        }
+
+        Ray reflection_ray  = { reflect_origin, reflect_direction };
+        reflect_color = cast_ray(&reflection_ray, spheres, number_of_spheres, lights, number_of_lights, depth + 1);
+    }
+
+    float diffuse_light_intensity = 0, specular_light_intensity = 0;
     for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
@@ -141,11 +156,11 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
                     shadow_origin = add_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
                 }
 
-                Vec3f shadow_pt = {0, 0, 0}, shadow_N= {0, 0, 0}; Material tmpmaterial = {{0, 0}, {0, 0, 0}, 0.0};
+                Vec3f shadow_point, shadow_normal; Material temp_material;
 
                 Ray temp_ray = {shadow_origin, light_direction};
-                bool light_intersected = scene_intersect(&temp_ray, spheres, number_of_spheres, &shadow_pt, &shadow_N, &tmpmaterial);
-                Vec3f pt_to_origin = sub_vec3f(shadow_pt, shadow_origin);
+                bool light_intersected = scene_intersect(&temp_ray, spheres, number_of_spheres, &shadow_point, &shadow_normal, &temp_material);
+                Vec3f pt_to_origin = sub_vec3f(shadow_point, shadow_origin);
                 bool obstruction_closer_than_light = vec3f_norm(pt_to_origin) < light_distance;
                 in_shadow = light_intersected && obstruction_closer_than_light;
             }
@@ -163,9 +178,14 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
             specular_light_intensity += lights[i].intensity * specular_illumination_intensity;
     }
 
-    return add_vec3f(
+    Vec3f result_vec = add_vec3f(
         multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
         multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
+    );
+    
+    return add_vec3f(
+        result_vec,
+        multiply_vec3f_with_scalar(reflect_color, material.albedo.z)
     );
 }
 
@@ -228,8 +248,7 @@ render(const Sphere* const spheres, size_t number_of_spheres, const Light* const
 
             // Writing [col * row + WIDTH] instead of the current expression just cost 
             // me 1.5 hours of debugging. Sigh. Don't write code when you're sleepy!
-            size_t cell_index = col + row * WIDTH;
-            framebuffer[cell_index] = cast_ray(&ray, spheres, number_of_spheres, lights, number_of_lights);
+            framebuffer[col + row * WIDTH] = cast_ray(&ray, spheres, number_of_spheres, lights, number_of_lights, 0);
         }
     }
     dump_ppm_image(framebuffer, WIDTH, HEIGHT);
@@ -238,14 +257,15 @@ render(const Sphere* const spheres, size_t number_of_spheres, const Light* const
 
 void
 raytracing_main() {
-    Material      ivory = {{0.6,  0.3}, {0.4, 0.4, 0.3},   50.0};
-    Material red_rubber = {{0.9,  0.1}, {0.3, 0.1, 0.1},   10.0};
+    Material      ivory = {{0.6,  0.3, 0.1}, {0.4, 0.4, 0.3},   50.0};
+    Material red_rubber = {{0.9,  0.1, 0.0}, {0.3, 0.1, 0.1},   10.0};
+    Material     mirror = {{0.0, 10.0, 0.8}, {1.0, 1.0, 1.0}, 1425.0};
 
     Sphere spheres[] = {
         {{-3,    0,   -16}, 2,      ivory},
-        {{-1.0, -1.5, -12}, 2, red_rubber},
+        {{-1.0, -1.5, -12}, 2,     mirror},
         {{ 1.5, -0.5, -18}, 3, red_rubber},
-        {{ 7,    5,   -18}, 4,      ivory},
+        {{ 7,    5,   -18}, 4,     mirror},
     };
 
     Light lights[] = {
