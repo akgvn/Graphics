@@ -107,34 +107,32 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
     Vec3f point, surface_normal;
     Material material;
 
-    if (scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
-        float diffuse_light_intensity = 0, specular_light_intensity = 0;
+    if (!scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
+        return (Vec3f) {0.2, 0.7, 0.8}; // Background color
+    }
+        
+    float diffuse_light_intensity = 0, specular_light_intensity = 0;
 
-        size_t count = 0;
-        for (size_t i = 0; i < number_of_lights; i++) {
+    for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
             vec3f_normalize(&light_direction);
 
-            // Lighting stuff starts here:
+            // Diffuse Lighting:
             float surface_illumination_intensity = multiply_vec3f(light_direction, surface_normal);
             if (surface_illumination_intensity < 0) surface_illumination_intensity = 0;
+            diffuse_light_intensity  += lights[i].intensity * surface_illumination_intensity;
 
-            // specular_illumination_intensity might not be the best name for this variable.
+            // Specular Lighting:
             float specular_illumination_intensity = multiply_vec3f(reflection_vector(light_direction, surface_normal), ray->direction);
             if (specular_illumination_intensity < 0) specular_illumination_intensity = 0;
             specular_illumination_intensity = pow(specular_illumination_intensity, material.specular_exponent);
-
-            diffuse_light_intensity  += lights[i].intensity * surface_illumination_intensity;
             specular_light_intensity += lights[i].intensity * specular_illumination_intensity;
-        }
-
-        return add_vec3f(
-            multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
-            multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
-        );
     }
 
-    return (Vec3f) {0.2, 0.7, 0.8}; // Background color
+    return add_vec3f(
+        multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
+        multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
+    );
 }
 
 // NOTE: Move this to a utils.h (?) when working on Raycasting or Software Rendering.
