@@ -65,13 +65,12 @@ ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *f
     *first_intersect_distance     = tc - half_length_of_ray_inside_circle;
     float last_intersect_distance = tc + half_length_of_ray_inside_circle;
 
-    // IMPORTANT NOTE / TODO: IT LOOKS LIKE THE COMPILER OPTIMIZES OUT SOME THE FOLLOWING THREE LINES.
-    // I realized this while working on adding shadows. It seems that compiler was ignoring the second
-    // if (first_intersect_distance < 0) statement, so I changed it to if (last_intersect_distance < 0).
-    // Quick look on godbolt makes it seems like the next line is optimized out in this state, but I didn't
-    // encounter any corrupted renderings so far. I'm leaving this for now, but this may need further investigation.
-    if (first_intersect_distance < 0) { *first_intersect_distance = last_intersect_distance; } // Maybe intersects at only one point?
-    if (last_intersect_distance  < 0) { return false; } // Now this doesn't happen? TODO
+    // If looking at earlier commits, you might see that I thought the compiler optimizes out some of the next 3 lines.
+    // Actually it doesn't, I was comparing a float* to 0. So the compiler thought, rightly, we'd never execute the
+    // if (pointer is lower than 0) { do thing } instruction. There should really be a warning for this, and if there is one,
+    // it should really be enabled by default.
+    if (*first_intersect_distance < 0.0) { *first_intersect_distance = last_intersect_distance; } // Maybe intersects at only one point?
+    if (  last_intersect_distance < 0.0) { return false; }
     else { return true; }
 }
 
@@ -104,7 +103,7 @@ Vec3f refraction_vector(Vec3f light_vector, Vec3f normal, float refractive_index
     float cos_refraction_squared = 1 - ((refractive_indices_ratio * refractive_indices_ratio) * (1 - cos_incidence*cos_incidence));
     if (cos_refraction_squared < 0) {
         return (Vec3f) {0, 0, 0};
-    } else { // TODO: Always this.
+    } else {
         return add_vec3f(
             multiply_vec3f_with_scalar(light_vector, refractive_indices_ratio),
             multiply_vec3f_with_scalar(refraction_normal, (refractive_indices_ratio * cos_incidence) - sqrtf(cos_refraction_squared))
@@ -120,12 +119,6 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
         float distance_of_i;
         bool current_sphere_intersects = ray_intersects_sphere(ray, &spheres[i], &distance_of_i);
         
-        // See the "IMPORTANT NOTE / TODO" above. The next 3 lines are the test that revealed the issue. Might need them again.
-        // if (distance_of_i < 0 && current_sphere_intersects) {
-        //     printf("distance_of_i = %lf, bool is %d\n", distance_of_i, current_sphere_intersects);
-        //     continue;
-        // }
-
         // Finds the closest sphere.
         if (current_sphere_intersects && (distance_of_i < spheres_distance)) {
             spheres_distance = distance_of_i;
