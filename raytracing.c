@@ -3,7 +3,10 @@
 #include <stdio.h>   // printf
 #include <stdlib.h>  // malloc, free
 #include <float.h>   // maximum float value (FLT_MAX)
+
+#define _USE_MATH_DEFINES // To make sure M_PI is defined -- zig cc wants this.
 #include <math.h>    // M_PI, pow
+
 #include <stdbool.h> // bool, true, false
 
 #define WIDTH 1024
@@ -13,7 +16,8 @@
 // NOTE: Maybe move these structs to a Raytracing.h?
 typedef struct Material
 {
-    Vec3f albedo;
+    float refractive_index;
+    Vec4f albedo;
     Vec3f diffuse_color;
     float specular_exponent; // "shininess"?
 } Material;
@@ -67,7 +71,7 @@ ray_intersects_sphere(const Ray* const ray, const Sphere* const sphere, float *f
     // Quick look on godbolt makes it seems like the next line is optimized out in this state, but I didn't
     // encounter any corrupted renderings so far. I'm leaving this for now, but this may need further investigation.
     if (first_intersect_distance < 0) { *first_intersect_distance = last_intersect_distance; } // Maybe intersects at only one point?
-    if (last_intersect_distance < 0) { return false; }
+    if (last_intersect_distance  < 0) { return false; } // Now this doesn't happen? TODO
     else { return true; }
 }
 
@@ -79,6 +83,34 @@ reflection_vector(Vec3f light_direction, Vec3f surface_normal) {
     );
 }
 
+Vec3f refraction_vector(Vec3f light_vector, Vec3f normal, float refractive_index) { // Snell's law
+    float cos_incidence = -1 * multiply_vec3f(light_vector, normal); // Cosine of the angle of the incidence
+
+    if      (cos_incidence >  1) { cos_incidence =  1; }
+    else if (cos_incidence < -1) { cos_incidence = -1; }
+
+    float refractive_indices_ratio; // n1 / n2, n1 is refractive index of outside, n2 is inside object
+    Vec3f refraction_normal;
+
+    if (cos_incidence < 0) { // Is the ray inside the object?
+        cos_incidence = -cos_incidence;
+        refractive_indices_ratio = refractive_index; // swap the indices
+        refraction_normal = multiply_vec3f_with_scalar(normal, -1); // invert the normal
+    } else { // not inside the object, go on
+        refractive_indices_ratio = 1.0 / refractive_index;
+        refraction_normal = normal;
+    }
+
+    float cos_refraction_squared = 1 - ((refractive_indices_ratio * refractive_indices_ratio) * (1 - cos_incidence*cos_incidence));
+    if (cos_refraction_squared < 0) {
+        return (Vec3f) {0, 0, 0};
+    } else { // TODO: Always this.
+        return add_vec3f(
+            multiply_vec3f_with_scalar(light_vector, refractive_indices_ratio),
+            multiply_vec3f_with_scalar(refraction_normal, (refractive_indices_ratio * cos_incidence) - sqrtf(cos_refraction_squared))
+        );
+    }
+}
 
 static bool
 scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres, Vec3f* hit_point, Vec3f* surface_normal, Material* material) {
@@ -89,8 +121,8 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
         bool current_sphere_intersects = ray_intersects_sphere(ray, &spheres[i], &distance_of_i);
         
         // See the "IMPORTANT NOTE / TODO" above. The next 3 lines are the test that revealed the issue. Might need them again.
-        // if (distance_of_i < 0) {
-        //     printf("negative but bool is %d\n", current_sphere_intersects);
+        // if (distance_of_i < 0 && current_sphere_intersects) {
+        //     printf("distance_of_i = %lf, bool is %d\n", distance_of_i, current_sphere_intersects);
         //     continue;
         // }
 
@@ -138,6 +170,23 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
         reflect_color = cast_ray(&reflection_ray, spheres, number_of_spheres, lights, number_of_lights, depth + 1);
     }
 
+    Vec3f refract_color;
+    {   // refraction stuff happens in this scope.
+        Vec3f refract_direction = refraction_vector(ray->direction, surface_normal, material.refractive_index); vec3f_normalize(&refract_direction);
+    
+        Vec3f refract_origin;
+        {
+            if (multiply_vec3f(refract_direction, surface_normal) < 0) {
+                refract_origin = sub_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+            } else {
+                refract_origin = add_vec3f(point, multiply_vec3f_with_scalar(surface_normal, 1e-3));
+            }
+        }
+
+        Ray refraction_ray  = { refract_origin, refract_direction };
+        refract_color = cast_ray(&refraction_ray, spheres, number_of_spheres, lights, number_of_lights, depth + 1);
+    }
+
     float diffuse_light_intensity = 0, specular_light_intensity = 0;
     for (size_t i = 0; i < number_of_lights; i++) {
             Vec3f light_direction = sub_vec3f(lights[i].position, point);
@@ -178,14 +227,20 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
             specular_light_intensity += lights[i].intensity * specular_illumination_intensity;
     }
 
-    Vec3f result_vec = add_vec3f(
+    Vec3f lighting = add_vec3f(
         multiply_vec3f_with_scalar(material.diffuse_color, diffuse_light_intensity * material.albedo.x), 
         multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
     );
+
+    // if (material.albedo.w > 0.1) print_vec4f(material.albedo);
+    Vec3f reflect_refract = add_vec3f(
+        multiply_vec3f_with_scalar(reflect_color, material.albedo.z),
+        multiply_vec3f_with_scalar(refract_color, material.albedo.w)
+    );
     
     return add_vec3f(
-        result_vec,
-        multiply_vec3f_with_scalar(reflect_color, material.albedo.z)
+        lighting,
+        reflect_refract
     );
 }
 
@@ -194,13 +249,20 @@ void
 dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
     // Size of buffer parametre must be width * height!
     // Dump the image to a PPM file.
-    FILE *fp = fopen("out.ppm", "wb");
-    char header[64];
-    int count = sprintf(header, "P6\n%d %d\n255\n", width, height);
-    fwrite(header, sizeof(char), count, fp); // Write the PPM header.
     
+    FILE *fp; 
+
+    // zig cc (clang) wanted me to use fopen_s, but has a problem with sprintf. I don't know what's up, GCC works.
+    if (fopen_s(&fp, "out.ppm", "wb") != 0) {
+        puts("Can't open file for writing.");
+        return;
+    }
+
+    char header[64];
+    size_t count = sprintf(header, "P6\n%d %d\n255\n", width, height);
+    fwrite(header, sizeof(char), count, fp); // Write the PPM header.
+
     for (size_t pixel = 0; pixel < width * height; pixel++) {
-        
         {
             // Check if any of the vec elements is greater than one.
             Vec3f* vec = &buffer[pixel];
@@ -218,7 +280,8 @@ dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
             (char)(buffer[pixel].x * 255), // NOTE: Could overflow without the check above!
             (char)(buffer[pixel].y * 255), // NOTE: Could overflow without the check above!
             (char)(buffer[pixel].z * 255), // NOTE: Could overflow without the check above!
-        };
+        }; // TODO: We crash after reaching this line when compiled with zig cc.
+
         // Note to self: fwrite moves the file cursor,
         // no need to use fseek or something.
         fwrite(rgb, sizeof(char), 3, fp);
@@ -257,13 +320,14 @@ render(const Sphere* const spheres, size_t number_of_spheres, const Light* const
 
 void
 raytracing_main() {
-    Material      ivory = {{0.6,  0.3, 0.1}, {0.4, 0.4, 0.3},   50.0};
-    Material red_rubber = {{0.9,  0.1, 0.0}, {0.3, 0.1, 0.1},   10.0};
-    Material     mirror = {{0.0, 10.0, 0.8}, {1.0, 1.0, 1.0}, 1425.0};
+    Material      ivory = {1.0, {0.6,  0.3, 0.1, 0.0}, {0.4, 0.4, 0.3},   50.0};
+    Material      glass = {1.5, {0.0,  0.5, 0.1, 0.8}, {0.6, 0.7, 0.8},  125.0};
+    Material red_rubber = {1.0, {0.9,  0.1, 0.0, 0.0}, {0.3, 0.1, 0.1},   10.0};
+    Material     mirror = {1.0, {0.0, 10.0, 0.8, 0.0}, {1.0, 1.0, 1.0}, 1425.0};
 
     Sphere spheres[] = {
         {{-3,    0,   -16}, 2,      ivory},
-        {{-1.0, -1.5, -12}, 2,     mirror},
+        {{-1.0, -1.5, -12}, 2,      glass},
         {{ 1.5, -0.5, -18}, 3, red_rubber},
         {{ 7,    5,   -18}, 4,     mirror},
     };
