@@ -21,6 +21,8 @@ typedef struct Material
     Vec3f diffuse_color;
     float specular_exponent; // "shininess"?
 } Material;
+#define DEFAULT_MATERIAL ((Material){1.0, {1.0,  0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 0.0})
+// Initialize all materials that have an effect on output to this default!
 
 typedef struct Sphere
 {
@@ -132,7 +134,28 @@ scene_intersect(const Ray* ray, const Sphere* spheres, size_t number_of_spheres,
         }
     }
 
-    return (spheres_distance < 1000);
+    float checkerboard_distance = FLT_MAX;
+
+    if (fabs(ray->direction.y) > 1e-3)  {
+
+        float board_distance = -(ray->origin.y+4) / ray->direction.y; // the checkerboard plane has equation y = -4
+        Vec3f board_hit_point = add_vec3f(
+            ray->origin,
+            multiply_vec3f_with_scalar(ray->direction, board_distance)
+        );
+
+        if (board_distance>0 && fabs(board_hit_point.x)<10 && board_hit_point.z<-10 && board_hit_point.z>-30 && board_distance<spheres_distance) {
+            checkerboard_distance = board_distance;
+            *hit_point = board_hit_point;
+            *surface_normal = (Vec3f) {0, 1, 0};
+
+            int white_or_orange = ((int)(.5*hit_point->x+1000) + (int)(.5*hit_point->z));
+
+            material->diffuse_color = white_or_orange & 1 ? (Vec3f){1, 1, 1} : (Vec3f){1, 0.7, 0.3};
+            material->diffuse_color = multiply_vec3f_with_scalar(material->diffuse_color, 0.3);
+        }
+    }
+    return (spheres_distance<1000) || (checkerboard_distance<1000);
 }
 
 // Return color of the sphere if intersected, otherwise returns background color.
@@ -140,7 +163,7 @@ static Vec3f
 cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_spheres, 
          const Light* const lights, size_t number_of_lights, size_t depth) {
     Vec3f point, surface_normal;
-    Material material;
+    Material material = DEFAULT_MATERIAL;
 
     if (depth > 5 || !scene_intersect(ray, spheres, number_of_spheres, &point, &surface_normal, &material)) {
         return (Vec3f) {0.2, 0.7, 0.8}; // Background color
