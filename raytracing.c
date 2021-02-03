@@ -4,8 +4,8 @@
 #include <stdlib.h>  // malloc, free
 #include <float.h>   // maximum float value (FLT_MAX)
 
-#define _USE_MATH_DEFINES // To make sure M_PI is defined -- zig cc wants this.
-#include <math.h>    // M_PI, pow
+#define _USE_MATH_DEFINES // To make sure M_PI is defined -- zig cc wants this on windows.
+#include <math.h>    // M_PI, pow, fabs -- M_PI is not available on Linux when compiled with --std=c11, use gnu11
 
 #include <stdbool.h> // bool, true, false
 
@@ -225,7 +225,6 @@ cast_ray(const Ray* const ray, const Sphere* const spheres, size_t number_of_sph
         multiply_vec3f_with_scalar((Vec3f){1.0, 1.0, 1.0}, specular_light_intensity * material.albedo.y)
     );
 
-    // if (material.albedo.w > 0.1) print_vec4f(material.albedo);
     Vec3f reflect_refract = add_vec3f(
         multiply_vec3f_with_scalar(reflect_color, material.albedo.z),
         multiply_vec3f_with_scalar(refract_color, material.albedo.w)
@@ -245,8 +244,8 @@ dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
     
     FILE *fp; 
 
-    // zig cc (clang) wanted me to use fopen_s, but has a problem with sprintf. I don't know what's up, GCC works.
-    if (fopen_s(&fp, "out.ppm", "wb") != 0) {
+    // Do not use fopen_s, it's not portable.
+    if ((fp = fopen("out.ppm", "wb")) == 0) {
         puts("Can't open file for writing.");
         return;
     }
@@ -269,11 +268,21 @@ dump_ppm_image(Vec3f* buffer, size_t width, size_t height) {
             }
         }
 
-        char rgb[3] = {
-            (char)(buffer[pixel].x * 255), // NOTE: Could overflow without the check above!
-            (char)(buffer[pixel].y * 255), // NOTE: Could overflow without the check above!
-            (char)(buffer[pixel].z * 255), // NOTE: Could overflow without the check above!
-        }; // TODO: We crash after reaching this line when compiled with zig cc.
+        // The next three lines are to avoid crashing when compiled with zig cc.
+        // Reason for the crash is appearently code compiled by zig cc crashes
+        // when undefined behavior is encountered. I guess casting from float to
+        // char is undefined behavior. So I'm casting to unsigned long, and only
+        // then cast to char. This solves the crashing issue.
+        // For the zig issue see: https://github.com/ziglang/zig/issues/4830
+        unsigned long int x = (buffer[pixel].x * 255);
+        unsigned long int y = (buffer[pixel].y * 255);
+        unsigned long int z = (buffer[pixel].z * 255);
+
+        char rgb[] = {
+            (char)x, // NOTE: Could overflow without the check above!
+            (char)y, // NOTE: Could overflow without the check above!
+            (char)z, // NOTE: Could overflow without the check above!
+        };
 
         // Note to self: fwrite moves the file cursor,
         // no need to use fseek or something.
