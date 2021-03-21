@@ -4,7 +4,7 @@ Hello there! This is my "studying computer graphics for fun" repo.
 
 I'm mainly following ssloy's [tutorials](https://github.com/ssloy/tinyraytracer/wiki), but reading other resources when I feel my grasp on the subject is not firm.
 
-And, I'm using C instead of C++.
+This repo will also contain a software rasterizer at some point, hopefully when I have less coursework to deal with. Note to self: Read [this](https://gabrielgambetta.com/computer-graphics-from-scratch/index.html).
 
 ## Resources
 - [Ray-Sphere Intersection » Lighthouse3d.com](http://www.lighthouse3d.com/tutorials/maths/ray-sphere-intersection/)
