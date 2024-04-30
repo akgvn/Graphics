@@ -2,3 +2,7 @@
 *.ppm
 *.bat
 *.txt
+*.bin
+Graphics
+*.dSYM
+.DS_Store
